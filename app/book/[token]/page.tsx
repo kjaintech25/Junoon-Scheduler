@@ -11,6 +11,7 @@ type Slot = {
   start_time: string
   duration_hours: number
   status: 'open' | 'claimed' | 'confirmed'
+  instructor_id: string | null
 }
 
 type Instructor = {
@@ -62,7 +63,7 @@ export default function InstructorBooking() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Slot | null>(null)
-  const [claiming, setClaiming] = useState(false)
+  const [joiningWaitlist, setJoiningWaitlist] = useState(false)
   const [weekOffset, setWeekOffset] = useState(0)
   const weekDates = getWeekDates(weekOffset)
 
@@ -77,29 +78,51 @@ export default function InstructorBooking() {
         .single()
       if (insErr || !ins) { setError('Invalid booking link.'); setLoading(false); return }
       setInstructor(ins)
-      const { data: slotsData } = await supabase
+      // Fetch open slots + slots already claimed by this instructor
+      const { data: openSlots } = await supabase
         .from('slots')
         .select('*')
         .eq('status', 'open')
         .order('date', { ascending: true })
-      setSlots(slotsData || [])
+      const { data: mySlots } = await supabase
+        .from('slots')
+        .select('*')
+        .eq('instructor_id', ins.id)
+        .neq('status', 'open')
+        .order('date', { ascending: true })
+      setSlots([...(openSlots || []), ...(mySlots || [])])
       setLoading(false)
     }
     load()
   }, [token])
 
-  const handleClaim = async () => {
+  const handleJoinWaitlist = async () => {
     if (!selected || !instructor) return
-    setClaiming(true)
+    setJoiningWaitlist(true)
     const { error: upErr } = await supabase
       .from('slots')
       .update({ status: 'claimed', instructor_id: instructor.id })
       .eq('id', selected.id)
     if (!upErr) {
-      setSlots(prev => prev.filter(s => s.id !== selected.id))
       setSelected(null)
     }
-    setClaiming(false)
+    setJoiningWaitlist(false)
+
+    // Refetch slots to get the updated status
+    if (instructor) {
+      const { data: openSlots } = await supabase
+        .from('slots')
+        .select('*')
+        .eq('status', 'open')
+        .order('date', { ascending: true })
+      const { data: mySlots } = await supabase
+        .from('slots')
+        .select('*')
+        .eq('instructor_id', instructor.id)
+        .neq('status', 'open')
+        .order('date', { ascending: true })
+      setSlots([...(openSlots || []), ...(mySlots || [])])
+    }
   }
 
   const slotsByDate = (date: Date) =>
@@ -206,7 +229,7 @@ export default function InstructorBooking() {
 
         {/* Week Grid */}
         <div className="grid grid-cols-7 gap-3">
-          {weekDates.slice(0, 4).map((date, i) => {
+          {weekDates.map((date, i) => {
             const daySlots = slotsByDate(date)
             const isToday = fmt(date) === fmt(new Date())
             return (
@@ -221,16 +244,22 @@ export default function InstructorBooking() {
                 </div>
                 <div className="space-y-2">
                   {daySlots.length === 0 ? (
-                    <div className="rounded p-3 text-center" style={{ background: 'var(--linen)' }}>
+                    <div className="rounded p-6 text-center" style={{ background: 'var(--linen)', opacity: 0.5 }}>
                       <p className="font-mono text-[9px] uppercase tracking-widest"
-                         style={{ color: 'var(--driftwood)' }}>FULL</p>
+                         style={{ color: 'var(--driftwood)' }}>—</p>
                     </div>
-                  ) : daySlots.map(slot => (
+                  ) : daySlots.map(slot => {
+                    const isYours = slot.instructor_id === instructor?.id
+                    const isOpen = slot.status === 'open'
+                    const bg = isOpen ? 'rgba(122,155,122,0.12)' : 'rgba(229,175,112,0.12)'
+                    const bc = isOpen ? 'var(--sage)' : 'var(--turmeric)'
+                    const badgeColor = isOpen ? 'var(--moss)' : 'var(--turmeric)'
+                    return (
                     <button key={slot.id} onClick={() => setSelected(slot)}
                       className="w-full text-left rounded p-3 border transition-all hover:opacity-90"
-                      style={{ background: 'rgba(122,155,122,0.12)', borderColor: 'var(--sage)' }}>
-                      <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: 'var(--moss)' }}>
-                        AVAILABLE
+                      style={{ background: bg, borderColor: bc }}>
+                      <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: badgeColor }}>
+                        {isOpen ? isYours ? 'CLICK TO VIEW' : 'AVAILABLE' : isYours ? 'WAITLISTED' : 'CLAIMED BY OTHER'}
                       </p>
                       <p className="text-xs font-medium mb-1" style={{ color: 'var(--bark)' }}>
                         {formatTime(slot.start_time)} —<br />{addHours(slot.start_time, slot.duration_hours)}
@@ -239,6 +268,8 @@ export default function InstructorBooking() {
                         {slot.duration_hours * 60}m
                       </p>
                     </button>
+                    )
+                  })}
                   ))}
                 </div>
               </div>
@@ -248,22 +279,29 @@ export default function InstructorBooking() {
       </main>
 
       {/* Right Detail Panel */}
-      {selected && (
+      {selected && (() => {
+        const isOpen = selected.status === 'open'
+        const isYours = selected.instructor_id === instructor?.id
+        return (
         <div className="fixed inset-0 z-40 flex justify-end">
           <div className="absolute inset-0 bg-black/20" onClick={() => setSelected(null)} />
           <div className="relative w-80 shadow-2xl flex flex-col overflow-y-auto"
                style={{ background: 'var(--white)' }}>
             {/* Image / Header */}
             <div className="relative h-48 flex items-end p-4"
-                 style={{ background: 'linear-gradient(160deg, var(--clay) 0%, var(--bark) 100%)' }}>
+                 style={{ background: isOpen
+                   ? 'linear-gradient(160deg, var(--clay) 0%, var(--bark) 100%)'
+                   : 'linear-gradient(160deg, var(--turmeric) 0%, var(--bark) 100%)' }}>
               <button onClick={() => setSelected(null)}
                 className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-full text-sm"
                 style={{ background: 'rgba(255,255,255,0.2)', color: 'var(--white)' }}>✕</button>
               <div>
                 <span className="font-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded-sm mb-2 inline-block"
-                      style={{ background: 'var(--sage)', color: 'var(--white)' }}>AVAILABLE SLOT</span>
+                      style={{ background: isOpen ? 'var(--sage)' : 'var(--turmeric)', color: 'var(--white)' }}>
+                  {isOpen ? 'AVAILABLE SLOT' : isYours ? 'WAITLISTED' : 'CLAIMED BY OTHER'}
+                </span>
                 <p className="font-display text-2xl font-light" style={{ color: 'var(--white)' }}>
-                  {selected.duration_hours}h Class Slot
+                  {selected.duration_hours * 60}min Class Slot
                 </p>
               </div>
             </div>
@@ -273,7 +311,7 @@ export default function InstructorBooking() {
               <div className="grid grid-cols-3 gap-3 mb-5 pb-5 border-b" style={{ borderColor: 'var(--linen)' }}>
                 <div>
                   <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: 'var(--driftwood)' }}>DURATION</p>
-                  <p className="text-sm font-medium" style={{ color: 'var(--bark)' }}>{selected.duration_hours * 60} Minutes</p>
+                  <p className="text-sm font-medium" style={{ color: 'var(--bark)' }}>{selected.duration_hours * 60} min</p>
                 </div>
                 <div>
                   <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: 'var(--driftwood)' }}>DATE</p>
@@ -287,34 +325,46 @@ export default function InstructorBooking() {
 
               <div className="mb-5">
                 <p className="font-mono text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--bark)' }}>
-                  About this Slot
+                  {isOpen ? 'About this Slot' : 'Status'}
                 </p>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--soil)' }}>
-                  This is an open teaching slot available for you to claim. Once claimed, it will be
-                  added to your schedule and the admin will be notified for confirmation.
+                  {isOpen
+                    ? 'This is an open teaching slot you can join the waitlist for. Once joined, Junoon admin will review and confirm your assignment. You\'ll see the status update in My Schedule.'
+                    : isYours
+                      ? 'You\'ve joined the waitlist for this slot. Junoon admin will review and confirm your assignment. You\'ll see the status update in My Schedule.'
+                      : 'This slot has been claimed by another instructor and is no longer available.'}
                 </p>
               </div>
 
+              {isOpen && (
               <div className="rounded-sm p-3 flex gap-2 items-start"
                    style={{ background: 'var(--ivory)', border: '1px solid var(--linen)' }}>
                 <span style={{ color: 'var(--clay)' }}>ⓘ</span>
                 <p className="text-xs leading-relaxed" style={{ color: 'var(--soil)' }}>
-                  Claiming this slot will add it to your schedule immediately. Cancellations must be made at least 24 hours in advance.
+                  Joining the waitlist lets admin know you're available. Cancellations must be made at least 24 hours in advance once confirmed.
                 </p>
               </div>
+              )}
             </div>
 
-            {/* Claim Button */}
+            {/* Action Area */}
             <div className="p-5 border-t" style={{ borderColor: 'var(--linen)' }}>
-              <button onClick={handleClaim} disabled={claiming}
-                className="w-full py-3.5 text-sm font-medium tracking-wider rounded-sm transition-opacity disabled:opacity-50 hover:opacity-90"
-                style={{ background: 'var(--clay)', color: 'var(--white)' }}>
-                {claiming ? 'Claiming...' : '⚡ Claim This Slot'}
-              </button>
+              {isOpen ? (
+                <button onClick={handleJoinWaitlist} disabled={joiningWaitlist}
+                  className="w-full py-3.5 text-sm font-medium tracking-wider rounded-sm transition-opacity disabled:opacity-50 hover:opacity-90"
+                  style={{ background: 'var(--clay)', color: 'var(--white)' }}>
+                  Join Waitlist
+                </button>
+              ) : (
+                <p className="text-center text-sm font-medium" style={{ color: 'var(--soil)' }}>
+                  {isYours ? '✓ Waitlisted — pending admin confirmation' : 'Not available'}
+                </p>
+              )}
             </div>
           </div>
-        </div>
-      )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
