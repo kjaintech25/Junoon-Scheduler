@@ -38,7 +38,6 @@ function fmt(d: Date) {
 }
 
 function fmtWeekRange(dates: Date[]) {
-  const opts: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric', year: 'numeric' }
   return `Week of ${dates[0].toLocaleDateString('en-US', { month: 'long', day: 'numeric' })} – ${dates[6].getDate()}, ${dates[6].getFullYear()}`
 }
 
