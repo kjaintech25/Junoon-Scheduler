@@ -58,6 +58,7 @@ export default function SlotManagement() {
     start_time: '',
     duration_hours: '1',
     class_type: 'Vinyasa Flow',
+    stream_id: '',
   })
 
   useEffect(() => { fetchSlots() }, [])
@@ -80,10 +81,11 @@ export default function SlotManagement() {
       start_time: form.start_time,
       duration_hours: parseInt(form.duration_hours),
       status: 'open',
+      stream_id: form.stream_id.trim() || null,
     }])
     if (!error) {
       setSuccessMsg('Slot published!')
-      setForm({ date: '', start_time: '', duration_hours: '1', class_type: 'Vinyasa Flow' })
+      setForm({ date: '', start_time: '', duration_hours: '1', class_type: 'Vinyasa Flow', stream_id: '' })
       fetchSlots()
       setTimeout(() => setSuccessMsg(''), 3000)
     }
@@ -296,6 +298,15 @@ export default function SlotManagement() {
                 style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }}>
                 {CLASS_TYPES.map(t => <option key={t}>{t}</option>)}
               </select>
+            </div>
+
+            <div>
+              <label className="font-mono text-[9px] uppercase tracking-widest block mb-1.5"
+                     style={{ color: 'var(--driftwood)' }}>ZENSTREAM ID <span style={{ color: 'var(--driftwood)', opacity: 0.6 }}>(optional)</span></label>
+              <input type="text" value={form.stream_id} placeholder="e.g. 2f0b755a..."
+                onChange={e => setForm(f => ({ ...f, stream_id: e.target.value }))}
+                className="w-full px-3 py-2 rounded-sm border text-sm outline-none focus:border-[var(--clay)] transition-colors font-mono"
+                style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }} />
             </div>
 
             <button onClick={handlePublish} disabled={publishing || !form.date || !form.start_time}
