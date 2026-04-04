@@ -73,13 +73,18 @@ export default function AdminDashboard() {
           JUNOON
         </span>
         <div className="flex items-center gap-8">
-          {['Dashboard', 'Schedule', 'Instructors', 'Settings'].map(item => (
-            <Link key={item}
-              href={item === 'Dashboard' ? '/' : item === 'Schedule' ? '/admin/slots' : '#'}
+          {[
+            { label: 'Dashboard', href: '/' },
+            { label: 'Schedule', href: '/admin/slots' },
+            { label: 'Classes', href: '/admin/classes' },
+            { label: 'Instructors', href: '#' },
+            { label: 'Settings', href: '#' },
+          ].map(({ label, href }) => (
+            <Link key={label} href={href}
               className="text-sm font-medium relative"
-              style={{ color: item === 'Dashboard' ? 'var(--clay)' : 'var(--driftwood)' }}>
-              {item}
-              {item === 'Dashboard' && (
+              style={{ color: label === 'Dashboard' ? 'var(--clay)' : 'var(--driftwood)' }}>
+              {label}
+              {label === 'Dashboard' && (
                 <span className="absolute -bottom-[17px] left-0 right-0 h-[2px]"
                       style={{ background: 'var(--clay)' }} />
               )}

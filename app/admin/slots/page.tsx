@@ -101,13 +101,18 @@ export default function SlotManagement() {
           JUNOON
         </span>
         <div className="flex items-center gap-8">
-          {['Overview', 'Schedule', 'Instructors', 'Settings'].map(item => (
-            <Link key={item}
-              href={item === 'Overview' ? '/' : '#'}
+          {[
+            { label: 'Dashboard', href: '/' },
+            { label: 'Schedule', href: '/admin/slots' },
+            { label: 'Classes', href: '/admin/classes' },
+            { label: 'Instructors', href: '#' },
+            { label: 'Settings', href: '#' },
+          ].map(({ label, href }) => (
+            <Link key={label} href={href}
               className="text-sm font-medium relative"
-              style={{ color: item === 'Schedule' ? 'var(--clay)' : 'var(--driftwood)' }}>
-              {item}
-              {item === 'Schedule' && (
+              style={{ color: label === 'Schedule' ? 'var(--clay)' : 'var(--driftwood)' }}>
+              {label}
+              {label === 'Schedule' && (
                 <span className="absolute -bottom-[17px] left-0 right-0 h-[2px]"
                       style={{ background: 'var(--clay)' }} />
               )}
