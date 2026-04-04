@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 
-export async function GET(req: NextRequest) {
-  const liveId = req.nextUrl.searchParams.get('liveId')
-  if (!liveId) {
-    return NextResponse.json({ error: 'liveId required' }, { status: 400 })
-  }
-
+export async function GET() {
+  const liveId = process.env.VDOCIPHER_LIVE_ID
   const apiKey = process.env.VDOCIPHER_API_KEY
-  if (!apiKey) {
-    return NextResponse.json({ error: 'API key not configured' }, { status: 500 })
+
+  if (!liveId || !apiKey) {
+    return NextResponse.json({ error: 'VdoCipher credentials not configured' }, { status: 500 })
   }
 
   // VdoCipher live-v2 player requires a JWT signed with your API secret
@@ -19,5 +16,5 @@ export async function GET(req: NextRequest) {
     { expiresIn: '6h' }
   )
 
-  return NextResponse.json({ token })
+  return NextResponse.json({ token, liveId })
 }
