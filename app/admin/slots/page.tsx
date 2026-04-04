@@ -107,6 +107,7 @@ export default function SlotManagement() {
             { label: 'Dashboard', href: '/' },
             { label: 'Schedule', href: '/admin/slots' },
             { label: 'Classes', href: '/admin/classes' },
+            { label: 'Stream', href: '/admin/stream' },
             { label: 'Instructors', href: '#' },
             { label: 'Settings', href: '#' },
           ].map(({ label, href }) => (
