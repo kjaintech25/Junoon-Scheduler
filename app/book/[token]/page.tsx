@@ -72,55 +72,33 @@ export default function InstructorBooking() {
   const weekDates = getWeekDates(weekOffset)
 
   const fetchSlots = async (insId: string) => {
-    // Open slots
-    const { data: openSlots } = await supabase
+    // Fetch ALL slots (every instructor should see every slot)
+    const { data: allSlotsData } = await supabase
       .from('slots')
       .select('*')
-      .eq('status', 'open')
       .order('date', { ascending: true })
 
-    // Waitlisted slots (from waitlist table)
+    // Fetch my waitlist entries
     const { data: wlData } = await supabase
       .from('waitlist')
-      .select('slot_id, slots(*)')
+      .select('slot_id')
       .eq('instructor_id', insId)
     const wlSlotIds = new Set((wlData || []).map(w => w.slot_id))
 
-    // Confirmed slots (from classes table)
+    // Fetch my confirmed classes
     const { data: clsData } = await supabase
       .from('classes')
-      .select('slot_id, slots(*)')
+      .select('slot_id')
       .eq('instructor_id', insId)
     const confirmedSlotIds = new Set((clsData || []).map(c => c.slot_id))
 
-    // Open slots enriched
-    const enrichedOpen: EnrichedSlot[] = (openSlots || []).map(s => ({
+    // Enrich every slot with my personal status
+    const enriched: EnrichedSlot[] = (allSlotsData || []).map(s => ({
       ...s,
-      myStatus: wlSlotIds.has(s.id) ? 'waitlisted' : 'open',
+      myStatus: confirmedSlotIds.has(s.id) ? 'confirmed' : (wlSlotIds.has(s.id) ? 'waitlisted' : 'open'),
     }))
 
-    // Explicitly waitlisted slots
-    const enrichedWl: EnrichedSlot[] = (wlData || [])
-      .map(w => w.slots as Slot | null)
-      .filter(Boolean)
-      .map(s => ({ ...s!, myStatus: 'waitlisted' as const }))
-
-    // Confirmed slots
-    const enrichedConf: EnrichedSlot[] = (clsData || [])
-      .map(c => c.slots as Slot | null)
-      .filter(Boolean)
-      .map(s => ({ ...s!, myStatus: 'confirmed' as const }))
-
-    // Deduplicate: open + my waitlisted + my confirmed
-    const seen = new Set<string>()
-    const allSlots: EnrichedSlot[] = []
-    for (const s of [...enrichedOpen, ...enrichedWl, ...enrichedConf]) {
-      if (!seen.has(s.id)) {
-        seen.add(s.id)
-        allSlots.push(s)
-      }
-    }
-    setSlots(allSlots)
+    setSlots(enriched)
   }
 
   useEffect(() => {
@@ -299,24 +277,24 @@ export default function InstructorBooking() {
                          style={{ color: 'var(--driftwood)' }}>—</p>
                     </div>
                   ) : daySlots.map(slot => {
-                    const isYours = slot.instructor_id === instructor?.id
-                    const isOpen = slot.status === 'open'
-                    const isClaimed = slot.status === 'claimed'
+                    const isOpen = slot.myStatus === 'open'
+                    const isWaitlisted = slot.myStatus === 'waitlisted'
+                    const isConfirmed = slot.myStatus === 'confirmed'
                     const bg = isOpen ? 'rgba(122,155,122,0.12)' : 'rgba(229,175,112,0.12)'
                     const bc = isOpen ? 'var(--sage)' : 'var(--turmeric)'
-                    const badgeColor = isOpen ? 'var(--moss)' : 'var(--turmeric)'
-                    const clickable = isOpen || (isClaimed && isYours)
+                    const badgeColor = isOpen
+                      ? 'var(--moss)'
+                      : isWaitlisted ? '#8C5A0A' : 'var(--clay)'
                     return (
                       <div key={slot.id}
                         className="w-full text-left rounded p-3 border transition-all"
                         style={{
                           background: bg, borderColor: bc,
-                          cursor: clickable ? 'pointer' : 'default',
-                          opacity: clickable ? 1 : 0.6,
+                          cursor: 'pointer',
                         }}
-                        onClick={() => clickable && setSelected(slot)}>
+                        onClick={() => setSelected(slot)}>
                         <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: badgeColor }}>
-                          {isOpen ? 'AVAILABLE' : isYours ? 'WAITLISTED' : 'CLAIMED BY OTHER'}
+                          {isOpen ? 'AVAILABLE' : isWaitlisted ? 'WAITLISTED' : isConfirmed ? 'CONFIRMED' : 'CLAIMED BY OTHER'}
                         </p>
                         <p className="text-xs font-medium mb-1" style={{ color: 'var(--bark)' }}>
                           {formatTime(slot.start_time)} —<br />{addHours(slot.start_time, slot.duration_hours)}
@@ -336,8 +314,8 @@ export default function InstructorBooking() {
 
       {/* Right Detail Panel */}
       {selected && (() => {
-        const isOpen = selected.status === 'open'
-        const isYours = selected.instructor_id === instructor?.id
+        const isOpen = selected.myStatus === 'open'
+        const isWaitlisted = selected.myStatus === 'waitlisted'
         return (
         <div className="fixed inset-0 z-40 flex justify-end">
           <div className="absolute inset-0 bg-black/20" onClick={() => setSelected(null)} />

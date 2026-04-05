@@ -75,12 +75,22 @@ export function ClassesTab() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ ...DEFAULT_FORM })
+  const [editingInstructor, setInstructorSelector] = useState<string>('')
   const [filter, setFilter] = useState<string>('all')
   const [classRecords, setClassRecords] = useState<ClassRecord[]>([])
   const [slotWaitlistCounts, setSlotWaitlistCounts] = useState<Record<string, number>>({})
   const [selectedWaitlistEntries, setSelectedWaitlistEntries] = useState<WaitlistEntry[]>([])
+  const [allInstructors, setAllInstructors] = useState<Instructor[]>([])
 
-  useEffect(() => { fetchSlots() }, [])
+  useEffect(() => { fetchSlots(); fetchAllInstructors() }, [])
+
+  const fetchAllInstructors = async () => {
+    const { data } = await supabase
+      .from('instructors')
+      .select('*')
+      .order('name', { ascending: true })
+    setAllInstructors(data || [])
+  }
 
   const fetchSlots = async () => {
     setLoading(true)
@@ -172,16 +182,11 @@ export function ClassesTab() {
     // 2. Flip slot to confirmed
     await supabase.from('slots').update({ status: 'confirmed' }).eq('id', slot.id)
 
-    // 3. Delete all other waitlist entries for this slot
-    await supabase.from('waitlist').delete().eq('slot_id', slot.id)
-
-    // 4. Update local state
+    // 3. Update local state (keep other instructors on waitlist)
     const updated = { ...slot, status: 'confirmed' as const }
     setSelected(updated)
     setSlots(prev => prev.map(s => s.id === slot.id ? updated : s))
-    setSelectedWaitlistEntries([])
-    setSlotWaitlistCounts(prev => ({ ...prev, [slot.id]: 0 }))
-    fetchSlots()
+    await fetchSlots()
     setSaveMsg(`${entry.instructor?.name || 'Instructor'} confirmed!`)
     setTimeout(() => setSaveMsg(''), 3000)
 
@@ -230,6 +235,7 @@ export function ClassesTab() {
     setSelected(slot)
     setEditingId(slot.id)
     setCreating(false)
+    setInstructorSelector('')
     setForm({
       date: slot.date,
       start_time: slot.start_time,
@@ -243,6 +249,7 @@ export function ClassesTab() {
 
   const cancelEdit = () => {
     setEditingId(null)
+    setInstructorSelector('')
     setForm({ ...DEFAULT_FORM })
   }
 
@@ -271,6 +278,7 @@ export function ClassesTab() {
         status: form.status,
         stream_id: form.stream_id.trim() || null,
         class_type: form.class_type,
+        instructor_id: editingInstructor || null,
       })
       .eq('id', editingId)
     if (!error) {
@@ -280,7 +288,7 @@ export function ClassesTab() {
         start_time: form.start_time,
         duration_hours: minutes / 60,
         status: form.status as Slot['status'],
-        instructor_id: selected?.instructor_id || null,
+        instructor_id: editingInstructor || null,
         stream_id: form.stream_id.trim() || null,
         class_type: form.class_type,
       }
@@ -625,6 +633,23 @@ export function ClassesTab() {
                     style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }}>
                     {Object.entries(STATUS_STYLES).map(([key, val]) => (
                       <option key={key} value={key}>{val.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Instructor Selector */}
+                <div>
+                  <label className="font-mono text-[9px] uppercase tracking-widest block mb-1.5"
+                         style={{ color: 'var(--driftwood)' }}>INSTRUCTOR <span style={{ opacity: 0.6 }}>(optional)</span></label>
+                  <select value={editingId}
+                    onChange={e => setInstructorSelector(e.target.value)}
+                    className="w-full px-3 py-2 rounded-sm border text-sm outline-none focus:border-[var(--clay)] transition-colors"
+                    style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }}>
+                    <option value="">— None —</option>
+                    {allInstructors.map(ins => (
+                      <option key={ins.id} value={ins.id}>
+                        {ins.name}{selectedWaitlistEntries.some(e => e.instructor_id === ins.id) ? ' (on waitlist)' : ''}
+                      </option>
                     ))}
                   </select>
                 </div>
