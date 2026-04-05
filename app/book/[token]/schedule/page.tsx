@@ -13,6 +13,16 @@ type Slot = {
   status: 'open' | 'claimed' | 'confirmed' | 'rejected'
 }
 
+type WaitlistEntry = {
+  slot: Slot
+  signed_up_at: string
+}
+
+type ClassEntry = {
+  slot: Slot
+  confirmed_at: string
+}
+
 type Instructor = {
   id: string
   name: string
@@ -45,7 +55,8 @@ export default function MySchedule() {
   const token = params.token as string
 
   const [instructor, setInstructor] = useState<Instructor | null>(null)
-  const [slots, setSlots] = useState<Slot[]>([])
+  const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([])
+  const [confirmedEntries, setConfirmedEntries] = useState<ClassEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'Upcoming' | 'Waitlist' | 'Completed'>('Upcoming')
 
@@ -57,19 +68,25 @@ export default function MySchedule() {
         .from('instructors').select('*').eq('unique_token', token).single()
       if (!ins) { setLoading(false); return }
       setInstructor(ins)
-      const { data: slotsData } = await supabase
-        .from('slots').select('*')
+
+      // Fetch waitlisted slots (from waitlist table)
+      const { data: wlData } = await supabase
+        .from('waitlist')
+        .select('slot:slots(*), signed_up_at')
         .eq('instructor_id', ins.id)
-        .order('date', { ascending: true })
-      setSlots(slotsData || [])
+      setWaitlistEntries(wlData?.filter((w: any) => w.slot) || [])
+
+      // Fetch confirmed slots (from classes table)
+      const { data: clsData } = await supabase
+        .from('classes')
+        .select('slot:slots(*), confirmed_at')
+        .eq('instructor_id', ins.id)
+      setConfirmedEntries(clsData?.filter((c: any) => c.slot) || [])
+
       setLoading(false)
     }
     load()
   }, [token])
-
-  const confirmed = slots.filter(s => s.status === 'confirmed')
-  const claimed   = slots.filter(s => s.status === 'claimed')
-  const rejected  = slots.filter(s => s.status === 'rejected')
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
@@ -152,13 +169,14 @@ export default function MySchedule() {
                     </span>
                   </div>
 
-                  {confirmed.length === 0 ? (
+                  {confirmedEntries.length === 0 ? (
                     <div className="rounded-lg border py-8 text-center" style={{ borderColor: 'var(--linen)', background: 'var(--white)' }}>
                       <p className="text-sm" style={{ color: 'var(--driftwood)' }}>No confirmed sessions yet</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {confirmed.map(slot => {
+                      {confirmedEntries.map(entry => {
+                        const slot = entry.slot as Slot
                         const { month, day } = fmtDate(slot.date)
                         return (
                           <div key={slot.id}
@@ -195,14 +213,15 @@ export default function MySchedule() {
                 </section>
 
                 {/* Waitlist */}
-                {claimed.length > 0 && (
+                {waitlistEntries.length > 0 && (
                   <section>
                     <h2 className="flex items-center gap-2 font-medium text-base mb-4" style={{ color: 'var(--bark)' }}>
                       <span className="w-2 h-2 rounded-full inline-block" style={{ background: 'var(--turmeric)' }} />
                       Waitlist Status
                     </h2>
                     <div className="space-y-3">
-                      {claimed.map((slot, idx) => {
+                      {waitlistEntries.map((entry, idx) => {
+                        const slot = entry.slot as Slot
                         const { month, day } = fmtDate(slot.date)
                         return (
                           <div key={slot.id}
@@ -244,42 +263,16 @@ export default function MySchedule() {
 
             {activeTab === 'Waitlist' && (
               <div className="space-y-3">
-                {rejected.length === 0 ? (
+                {waitlistEntries.length === 0 ? (
                   <div className="rounded-lg border py-8 text-center" style={{ borderColor: 'var(--linen)', background: 'var(--white)' }}>
-                    <p className="text-sm" style={{ color: 'var(--driftwood)' }}>No rejected entries</p>
-                    <p className="text-xs mt-1" style={{ color: 'var(--driftwood)' }}>You'll see slots here if admin doesn't confirm your waitlist request.</p>
+                    <p className="text-sm" style={{ color: 'var(--driftwood)' }}>No waitlisted slots</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--driftwood)' }}>You don't have any pending waitlist entries.</p>
                   </div>
-                ) : rejected.map(slot => {
+                ) : waitlistEntries.map((entry, idx) => {
+                  const slot = entry.slot as Slot
                   const { month, day } = fmtDate(slot.date)
                   return (
                     <div key={slot.id}
-                      className="flex items-start gap-4 rounded-lg border p-4 opacity-60"
-                      style={{ background: 'var(--white)', borderColor: 'var(--linen)', borderLeft: '3px solid #8C3A18' }}>
-                      <div className="text-center min-w-[40px]">
-                        <p className="font-mono text-[9px] uppercase tracking-widest" style={{ color: 'var(--driftwood)' }}>{month}</p>
-                        <p className="font-display text-2xl font-light" style={{ color: 'var(--bark)' }}>{day}</p>
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-sm"
-                                style={{ background: 'rgba(140,58,24,0.1)', color: '#8C3A18' }}>REJECTED</span>
-                          <span className="text-xs" style={{ color: 'var(--driftwood)' }}>
-                            {formatTime(slot.start_time)} – {addHours(slot.start_time, slot.duration_hours)}
-                          </span>
-                        </div>
-                        <p className="font-medium text-sm mb-0.5" style={{ color: 'var(--bark)' }}>
-                          {slot.duration_hours}h Teaching Slot
-                        </p>
-                        <p className="text-xs" style={{ color: 'var(--driftwood)' }}>Junoon Wellness Studio</p>
-                      </div>
-                    </div>
-                  )
-                })}
-                {/* Also show claimed/waitlisted slots */}
-                {claimed.map((slot, idx) => {
-                  const { month, day } = fmtDate(slot.date)
-                  return (
-                    <div key={`pending-${slot.id}`}
                       className="flex items-start gap-4 rounded-lg border p-4"
                       style={{ background: 'var(--white)', borderColor: 'var(--linen)', borderLeft: '3px solid var(--turmeric)' }}>
                       <div className="text-center min-w-[40px]">
@@ -327,7 +320,7 @@ export default function MySchedule() {
           <div>
             <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: 'var(--driftwood)' }}>TOTAL CLASSES</p>
             <div className="flex items-baseline gap-2">
-              <p className="font-display text-3xl font-light" style={{ color: 'var(--bark)' }}>{confirmed.length}</p>
+              <p className="font-display text-3xl font-light" style={{ color: 'var(--bark)' }}>{confirmedEntries.length}</p>
               <span className="font-mono text-[9px] px-1.5 py-0.5 rounded-sm" style={{ background: 'rgba(196,114,74,0.1)', color: 'var(--clay)' }}>
                 CONFIRMED
               </span>
@@ -337,13 +330,13 @@ export default function MySchedule() {
           <div>
             <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: 'var(--driftwood)' }}>TEACHING HOURS</p>
             <p className="font-display text-3xl font-light" style={{ color: 'var(--bark)' }}>
-              {confirmed.reduce((acc, s) => acc + s.duration_hours, 0)}
+              {confirmedEntries.reduce((acc, e) => acc + (e.slot as Slot).duration_hours, 0)}
             </p>
           </div>
 
           <div>
             <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: 'var(--driftwood)' }}>PENDING REVIEW</p>
-            <p className="font-display text-3xl font-light" style={{ color: 'var(--bark)' }}>{claimed.length}</p>
+            <p className="font-display text-3xl font-light" style={{ color: 'var(--bark)' }}>{waitlistEntries.length}</p>
           </div>
         </div>
 

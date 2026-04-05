@@ -21,6 +21,23 @@ type Slot = {
   instructor?: Instructor | null
 }
 
+type WaitlistEntry = {
+  id: string
+  slot_id: string
+  instructor_id: string
+  signed_up_at: string
+  instructor?: Instructor | null
+}
+
+type ClassRecord = {
+  id: string
+  slot_id: string
+  instructor_id: string
+  class_title: string
+  confirmed_at: string
+  instructor?: Instructor | null
+}
+
 const STATUS_STYLES: Record<string, { label: string; color: string; bg: string }> = {
   open:      { label: 'OPEN', color: '#4D6B4D', bg: 'rgba(77,107,77,0.1)' },
   claimed:   { label: 'WAITLISTED', color: '#8C5A0A', bg: 'rgba(140,90,10,0.1)' },
@@ -59,25 +76,67 @@ export function ClassesTab() {
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ ...DEFAULT_FORM })
   const [filter, setFilter] = useState<string>('all')
+  const [classRecords, setClassRecords] = useState<ClassRecord[]>([])
+  const [slotWaitlistCounts, setSlotWaitlistCounts] = useState<Record<string, number>>({})
+  const [selectedWaitlistEntries, setSelectedWaitlistEntries] = useState<WaitlistEntry[]>([])
 
   useEffect(() => { fetchSlots() }, [])
 
   const fetchSlots = async () => {
     setLoading(true)
-    const { data } = await supabase
+
+    // Fetch all slots
+    const { data: slotData } = await supabase
       .from('slots')
-      .select('*, instructor:instructors(name, email)')
+      .select('*')
       .order('date', { ascending: true })
-    setSlots(data || [])
+    setSlots((slotData || []) as Slot[])
+
+    // Fetch waitlist counts per slot
+    const { data: wlData } = await supabase
+      .from('waitlist')
+      .select('slot_id')
+    const counts: Record<string, number> = {}
+    for (const entry of wlData || []) {
+      counts[entry.slot_id] = (counts[entry.slot_id] || 0) + 1
+    }
+    setSlotWaitlistCounts(counts)
+
+    // Fetch class records with instructor join
+    const { data: clsData } = await supabase
+      .from('classes')
+      .select('*, instructor:instructors(name, email)')
+      .order('confirmed_at', { ascending: false })
+    setClassRecords((clsData || []) as ClassRecord[])
+
     setLoading(false)
   }
 
-  const handleSelect = (slot: Slot) => {
+  const getWaitlistForSlot = async (slotId: string): Promise<WaitlistEntry[]> => {
+    const { data } = await supabase
+      .from('waitlist')
+      .select('*, instructor:instructors(id, name, email)')
+      .eq('slot_id', slotId)
+      .order('signed_up_at', { ascending: true })
+    return (data || []) as WaitlistEntry[]
+  }
+
+  const handleSelect = async (slot: Slot) => {
     setSelected(slot)
     setStreamInput(slot.stream_id || '')
     setEditingId(null)
     setCreating(false)
     setSaveMsg('')
+
+    // Fetch waitlist entries for this slot
+    if (slot.status === 'claimed') {
+      const entries = await getWaitlistForSlot(slot.id)
+      setSelectedWaitlistEntries(entries)
+    } else if (slot.status === 'confirmed') {
+      setSelectedWaitlistEntries([])
+    } else {
+      setSelectedWaitlistEntries([])
+    }
   }
 
   const handleLinkStream = async () => {
@@ -97,44 +156,73 @@ export function ClassesTab() {
     setSaving(false)
   }
 
-  const handleConfirm = async () => {
-    if (!selected || !selected.instructor_id) return
+  const handleAcceptWaitlist = async (entry: WaitlistEntry) => {
+    if (!selected) return
     setSaving(true)
-    // Flip slot to confirmed
-    const { error } = await supabase
-      .from('slots')
-      .update({ status: 'confirmed' })
-      .eq('id', selected.id)
-    if (!error) {
-      // Create a classes record
-      await supabase.from('classes').insert([{
-        slot_id: selected.id,
-        instructor_id: selected.instructor_id,
-        class_title: `${selected.class_type || 'Vinyasa'} Class`,
-      }])
-      const updated = { ...selected, status: 'confirmed' }
-      setSelected(updated)
-      setSlots(prev => prev.map(s => s.id === selected.id ? updated : s))
-      setSaveMsg('Instructor confirmed!')
-      setTimeout(() => setSaveMsg(''), 3000)
-    }
+
+    const slot = selected
+
+    // 1. Create class record
+    await supabase.from('classes').insert([{
+      slot_id: slot.id,
+      instructor_id: entry.instructor_id,
+      class_title: `${slot.class_type || 'Vinyasa'} Class`,
+    }])
+
+    // 2. Flip slot to confirmed
+    await supabase.from('slots').update({ status: 'confirmed' }).eq('id', slot.id)
+
+    // 3. Delete all other waitlist entries for this slot
+    await supabase.from('waitlist').delete().eq('slot_id', slot.id)
+
+    // 4. Update local state
+    const updated = { ...slot, status: 'confirmed' as const }
+    setSelected(updated)
+    setSlots(prev => prev.map(s => s.id === slot.id ? updated : s))
+    setSelectedWaitlistEntries([])
+    setSlotWaitlistCounts(prev => ({ ...prev, [slot.id]: 0 }))
+    fetchSlots()
+    setSaveMsg(`${entry.instructor?.name || 'Instructor'} confirmed!`)
+    setTimeout(() => setSaveMsg(''), 3000)
+
     setSaving(false)
   }
 
-  const handleReject = async () => {
-    if (!selected || !selected.instructor_id) return
+  const handleRejectWaitlist = async (entry: WaitlistEntry) => {
+    if (!selected) return
     setSaving(true)
-    const { error } = await supabase
-      .from('slots')
-      .update({ status: 'rejected', instructor_id: null })
-      .eq('id', selected.id)
-    if (!error) {
-      const updated = { ...selected, status: 'rejected', instructor_id: null }
-      setSelected(updated)
-      setSlots(prev => prev.map(s => s.id === selected.id ? updated : s))
-      setSaveMsg('Instructor removed from waitlist.')
-      setTimeout(() => setSaveMsg(''), 3000)
+
+    // 1. Delete this waitlist entry
+    await supabase.from('waitlist').delete().eq('id', entry.id)
+
+    // 2. Check if any waitlist entries remain
+    const { data: remaining } = await supabase
+      .from('waitlist')
+      .select('id')
+      .eq('slot_id', selected.id)
+    const hasRemaining = remaining && remaining.length > 0
+
+    // 3. If none remain, flip slot back to open
+    if (!hasRemaining) {
+      await supabase.from('slots').update({ status: 'open', instructor_id: null }).eq('id', selected.id)
     }
+
+    // 4. Update local state
+    const updatedSlots = selectedWaitlistEntries.filter(e => e.id !== entry.id)
+    setSelectedWaitlistEntries(updatedSlots)
+    setSlotWaitlistCounts(prev => ({ ...prev, [selected.id]: updatedSlots.length }))
+
+    if (!hasRemaining) {
+      const updatedSlot = { ...selected, status: 'open' as const, instructor_id: null }
+      setSelected(updatedSlot)
+      setSlots(prev => prev.map(s => s.id === selected.id ? updatedSlot : s))
+    } else {
+      fetchSlots()
+    }
+
+    setSaveMsg(`${entry.instructor?.name || 'Instructor'} removed from waitlist.`)
+    setTimeout(() => setSaveMsg(''), 3000)
+
     setSaving(false)
   }
 
@@ -227,10 +315,17 @@ export function ClassesTab() {
     setSaving(false)
   }
 
+  const getConfirmedInstructor = (slotId: string) => {
+    return classRecords.find(c => c.slot_id === slotId)?.instructor || null
+  }
+
   const statusFilter = filter === 'all' ? undefined : filter
   const displaySlots = statusFilter
     ? slots.filter(s => s.status === statusFilter)
     : slots
+
+  // Find confirmed slot's instructor for display
+  const confirmedInstructor = selected?.status === 'confirmed' ? getConfirmedInstructor(selected.id) : null
 
   return (
     <>
@@ -288,6 +383,8 @@ export function ClassesTab() {
               {displaySlots.map(slot => {
                 const s = STATUS_STYLES[slot.status]
                 const isSelected = selected?.id === slot.id
+                const wlCount = slotWaitlistCounts[slot.id] || 0
+                const confInstructor = getConfirmedInstructor(slot.id)
                 return (
                   <button key={slot.id} onClick={() => handleSelect(slot)}
                     className="w-full text-left px-4 py-3 rounded-sm transition-colors hover:opacity-80 bg-transparent border-none cursor-pointer"
@@ -310,26 +407,24 @@ export function ClassesTab() {
                         {slot.class_type}
                       </p>
                     )}
-                    {/* Instructor badge */}
-                    {slot.status === 'claimed' && slot.instructor && (
+                    {/* Waitlist count for claimed slots */}
+                    {slot.status === 'claimed' && wlCount > 0 && (
                       <div className="flex items-center gap-2 mt-1.5">
-                        <div className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-medium"
-                             style={{ background: 'rgba(140,90,10,0.2)', color: '#8C5A0A' }}>
-                          {slot.instructor.name.charAt(0)}
-                        </div>
-                        <span className="text-[9px] font-mono" style={{ color: '#8C5A0A' }}>
-                          {slot.instructor.name}
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm"
+                              style={{ background: 'rgba(140,90,10,0.1)', color: '#8C5A0A' }}>
+                          {wlCount} instructor{wlCount > 1 ? 's' : ''} on waitlist
                         </span>
                       </div>
                     )}
-                    {slot.status === 'confirmed' && slot.instructor && (
+                    {/* Confirmed instructor */}
+                    {slot.status === 'confirmed' && confInstructor && (
                       <div className="flex items-center gap-2 mt-1.5">
                         <div className="w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-medium"
                              style={{ background: 'rgba(77,107,77,0.2)', color: '#4D6B4D' }}>
-                          {slot.instructor.name.charAt(0)}
+                          {confInstructor.name.charAt(0)}
                         </div>
                         <span className="text-[9px] font-mono" style={{ color: '#4D6B4D' }}>
-                          {slot.instructor.name}
+                          {confInstructor.name}
                         </span>
                       </div>
                     )}
@@ -576,37 +671,21 @@ export function ClassesTab() {
                     {STATUS_STYLES[selected.status].label}
                   </span>
                 </div>
-                {/* Instructor info for claimed slots */}
-                {selected.status === 'claimed' && selected.instructor && (
-                  <div className="flex items-center gap-3 mt-3 px-4 py-3 rounded-sm border"
-                       style={{ background: 'rgba(140,90,10,0.05)', borderColor: 'rgba(140,90,10,0.25)' }}>
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium"
-                         style={{ background: 'rgba(140,90,10,0.2)', color: '#8C5A0A' }}>
-                      {selected.instructor.name.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium" style={{ color: '#8C5A0A' }}>
-                        {selected.instructor.name}
-                      </p>
-                      <p className="text-xs" style={{ color: 'var(--driftwood)' }}>
-                        {selected.instructor.email}
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {selected.status === 'confirmed' && selected.instructor && (
+
+                {/* Confirmed instructor from classes table */}
+                {selected.status === 'confirmed' && confirmedInstructor && (
                   <div className="flex items-center gap-3 mt-3 px-4 py-3 rounded-sm border"
                        style={{ background: 'rgba(77,107,77,0.05)', borderColor: 'rgba(77,107,77,0.2)' }}>
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium"
                          style={{ background: 'rgba(77,107,77,0.2)', color: '#4D6B4D' }}>
-                      {selected.instructor.name.charAt(0)}
+                      {confirmedInstructor.name.charAt(0)}
                     </div>
                     <div>
                       <p className="text-sm font-medium" style={{ color: '#4D6B4D' }}>
-                        {selected.instructor.name}
+                        {confirmedInstructor.name}
                       </p>
                       <p className="text-xs" style={{ color: 'var(--driftwood)' }}>
-                        {selected.instructor.email}
+                        {confirmedInstructor.email}
                       </p>
                     </div>
                   </div>
@@ -621,6 +700,64 @@ export function ClassesTab() {
                   Edit Class
                 </button>
               </div>
+
+              {/* Waitlist Management for claimed slots */}
+              {selected.status === 'claimed' && (
+                <div className="mt-4 rounded-lg border p-5" style={{ borderColor: 'var(--linen)', background: 'var(--white)' }}>
+                  <p className="font-mono text-[10px] uppercase tracking-widest mb-3" style={{ color: 'var(--bark)' }}>
+                    INSTRUCTOR WAITLIST
+                  </p>
+                  {selectedWaitlistEntries.length === 0 ? (
+                    <p className="text-sm py-2" style={{ color: 'var(--driftwood)' }}>
+                      No instructors on waitlist
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedWaitlistEntries.map((entry, idx) => {
+                        const ins = entry.instructor as Instructor | null
+                        return (
+                          <div key={entry.id}
+                            className="flex items-center justify-between px-3 py-3 rounded-sm border"
+                            style={{ background: 'rgba(140,90,10,0.05)', borderColor: 'rgba(140,90,10,0.2)' }}>
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-medium"
+                                   style={{ background: 'rgba(140,90,10,0.2)', color: '#8C5A0A' }}>
+                                {ins?.name?.charAt(0) ?? 'I'}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium" style={{ color: '#8C5A0A' }}>
+                                  {ins?.name ?? 'Unknown Instructor'}
+                                </p>
+                                <p className="text-xs" style={{ color: 'var(--driftwood)' }}>
+                                  {ins?.email ?? ''}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm"
+                                    style={{ background: 'rgba(140,90,10,0.1)', color: '#8C5A0A' }}>
+                                #{idx + 1}
+                              </span>
+                              <button onClick={() => handleAcceptWaitlist(entry)}
+                                disabled={saving}
+                                className="px-3 py-1.5 text-xs font-medium tracking-wider rounded-sm transition-opacity disabled:opacity-50 border-none cursor-pointer"
+                                style={{ background: 'var(--sage)', color: 'var(--white)' }}>
+                                {saving ? '...' : 'Accept'}
+                              </button>
+                              <button onClick={() => handleRejectWaitlist(entry)}
+                                disabled={saving}
+                                className="px-3 py-1.5 text-xs font-medium tracking-wider rounded-sm transition-opacity disabled:opacity-50 border border-red-300 bg-transparent cursor-pointer"
+                                style={{ color: '#8C3A18' }}>
+                                {saving ? '...' : 'Reject'}
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Link Stream Form */}
               <div className="rounded-lg border p-5" style={{ borderColor: 'var(--linen)', background: 'var(--white)' }}>
@@ -644,36 +781,15 @@ export function ClassesTab() {
                 </div>
                 {saveMsg && <p className="text-xs mt-2 font-mono" style={{ color: 'var(--moss)' }}>{saveMsg}</p>}
               </div>
-
-              {/* Confirm / Reject for claimed slots */}
-              {selected.status === 'claimed' && selected.instructor_id && (
-                <div className="mt-4 rounded-lg border p-5" style={{ borderColor: 'var(--linen)', background: 'var(--white)' }}>
-                  <p className="font-mono text-[10px] uppercase tracking-widest mb-3" style={{ color: 'var(--bark)' }}>
-                    INSTRUCTOR ASSIGNMENT
-                  </p>
-                  <div className="flex gap-2">
-                    <button onClick={handleConfirm} disabled={saving}
-                      className="flex-1 py-3 text-sm font-medium tracking-wider rounded-sm transition-opacity disabled:opacity-50 hover:opacity-90 border-none cursor-pointer"
-                      style={{ background: 'var(--sage)', color: 'var(--white)' }}>
-                      {saving ? 'Confirming...' : 'Confirm Instructor'}
-                    </button>
-                    <button onClick={handleReject} disabled={saving}
-                      className="flex-1 py-3 text-sm font-medium tracking-wider rounded-sm transition-opacity disabled:opacity-50 hover:opacity-90 border border-red-300 bg-transparent cursor-pointer"
-                      style={{ color: '#8C3A18' }}>
-                      {saving ? 'Rejecting...' : 'Reject'}
-                    </button>
-                  </div>
-                </div>
-              )}
-          </div>
-        )}
+            </div>
+          )}
         </div>
       </div>
     </>
   )
 }
 
-function formatDuration(hours: number) {
+function formatDurationLabel(hours: number) {
   const minutes = hours * 60
   if (minutes < 60) return `${minutes}m`
   if (minutes === 60) return '1h'

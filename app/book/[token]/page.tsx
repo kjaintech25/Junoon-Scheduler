@@ -10,8 +10,11 @@ type Slot = {
   date: string
   start_time: string
   duration_hours: number
-  status: 'open' | 'claimed' | 'confirmed'
-  instructor_id: string | null
+  status: 'open' | 'claimed' | 'confirmed' | 'rejected'
+}
+
+type EnrichedSlot = Slot & {
+  myStatus: 'open' | 'waitlisted' | 'confirmed' | 'rejected'
 }
 
 type Instructor = {
@@ -59,7 +62,7 @@ export default function InstructorBooking() {
   const token = params.token as string
 
   const [instructor, setInstructor] = useState<Instructor | null>(null)
-  const [slots, setSlots] = useState<Slot[]>([])
+  const [slots, setSlots] = useState<EnrichedSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Slot | null>(null)
@@ -69,18 +72,55 @@ export default function InstructorBooking() {
   const weekDates = getWeekDates(weekOffset)
 
   const fetchSlots = async (insId: string) => {
+    // Open slots
     const { data: openSlots } = await supabase
       .from('slots')
       .select('*')
       .eq('status', 'open')
       .order('date', { ascending: true })
-    const { data: mySlots } = await supabase
-      .from('slots')
-      .select('*')
+
+    // Waitlisted slots (from waitlist table)
+    const { data: wlData } = await supabase
+      .from('waitlist')
+      .select('slot_id, slots(*)')
       .eq('instructor_id', insId)
-      .neq('status', 'open')
-      .order('date', { ascending: true })
-    setSlots([...(openSlots || []), ...(mySlots || [])])
+    const wlSlotIds = new Set((wlData || []).map(w => w.slot_id))
+
+    // Confirmed slots (from classes table)
+    const { data: clsData } = await supabase
+      .from('classes')
+      .select('slot_id, slots(*)')
+      .eq('instructor_id', insId)
+    const confirmedSlotIds = new Set((clsData || []).map(c => c.slot_id))
+
+    // Open slots enriched
+    const enrichedOpen: EnrichedSlot[] = (openSlots || []).map(s => ({
+      ...s,
+      myStatus: wlSlotIds.has(s.id) ? 'waitlisted' : 'open',
+    }))
+
+    // Explicitly waitlisted slots
+    const enrichedWl: EnrichedSlot[] = (wlData || [])
+      .map(w => w.slots as Slot | null)
+      .filter(Boolean)
+      .map(s => ({ ...s!, myStatus: 'waitlisted' as const }))
+
+    // Confirmed slots
+    const enrichedConf: EnrichedSlot[] = (clsData || [])
+      .map(c => c.slots as Slot | null)
+      .filter(Boolean)
+      .map(s => ({ ...s!, myStatus: 'confirmed' as const }))
+
+    // Deduplicate: open + my waitlisted + my confirmed
+    const seen = new Set<string>()
+    const allSlots: EnrichedSlot[] = []
+    for (const s of [...enrichedOpen, ...enrichedWl, ...enrichedConf]) {
+      if (!seen.has(s.id)) {
+        seen.add(s.id)
+        allSlots.push(s)
+      }
+    }
+    setSlots(allSlots)
   }
 
   useEffect(() => {
@@ -103,11 +143,14 @@ export default function InstructorBooking() {
   const handleJoinWaitlist = async () => {
     if (!selected || !instructor) return
     setJoiningWaitlist(true)
-    const { error: upErr } = await supabase
-      .from('slots')
-      .update({ status: 'claimed', instructor_id: instructor.id })
-      .eq('id', selected.id)
-    if (!upErr) {
+    const { error } = await supabase
+      .from('waitlist')
+      .insert([{ slot_id: selected.id, instructor_id: instructor.id }])
+    if (!error) {
+      // If slot was open, flip to claimed
+      if (selected.status === 'open') {
+        await supabase.from('slots').update({ status: 'claimed' }).eq('id', selected.id)
+      }
       setSelected(null)
       await fetchSlots(instructor.id)
     }
@@ -117,11 +160,21 @@ export default function InstructorBooking() {
   const handleLeaveWaitlist = async () => {
     if (!selected || !instructor) return
     setLeavingWaitlist(true)
-    const { error: upErr } = await supabase
-      .from('slots')
-      .update({ status: 'open', instructor_id: null })
-      .eq('id', selected.id)
-    if (!upErr) {
+    const { error } = await supabase
+      .from('waitlist')
+      .delete()
+      .eq('slot_id', selected.id)
+      .eq('instructor_id', instructor.id)
+    if (!error) {
+      // Check if anyone else is waitlisted
+      const { data: remaining } = await supabase
+        .from('waitlist')
+        .select('id')
+        .eq('slot_id', selected.id)
+        .limit(1)
+      if (!remaining || remaining.length === 0) {
+        await supabase.from('slots').update({ status: 'open' }).eq('id', selected.id)
+      }
       setSelected(null)
       await fetchSlots(instructor.id)
     }

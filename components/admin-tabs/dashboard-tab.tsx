@@ -12,6 +12,16 @@ type Slot = {
   instructor_id: string | null
 }
 
+type ConfirmedClass = {
+  id: string
+  slot_id: string
+  instructor_id: string
+  class_title: string
+  confirmed_at: string
+  slots: { date: string; start_time: string; duration_hours: number } | null
+  instructor: { name: string; email: string } | null
+}
+
 const STATUS_STYLES: Record<string, { badge: string; label: string }> = {
   open:      { badge: 'bg-[#e8f4ec] text-[#4D6B4D] border border-[#7A9B7A]', label: 'OPEN' },
   claimed:   { badge: 'bg-[#fef5e4] text-[#8C5A0A] border border-[#E8B870]', label: 'CLAIMED' },
@@ -43,6 +53,7 @@ function fmtRange(dates: Date[]) {
 
 export function DashboardTab() {
   const [slots, setSlots] = useState<Slot[]>([])
+  const [confirmedClasses, setConfirmedClasses] = useState<ConfirmedClass[]>([])
   const [loading, setLoading] = useState(true)
   const [weekOffset, setWeekOffset] = useState(0)
   const weekDates = getWeekDates(weekOffset)
@@ -55,6 +66,14 @@ export function DashboardTab() {
         .select('*')
         .order('date', { ascending: true })
       setSlots(data || [])
+
+      // Fetch confirmed classes from classes table with joins
+      const { data: clsData } = await supabase
+        .from('classes')
+        .select('*, slots(date, start_time, duration_hours), instructor:instructors(name, email)')
+        .order('confirmed_at', { ascending: false })
+      setConfirmedClasses((clsData || []) as ConfirmedClass[])
+
       setLoading(false)
     }
     fetchSlots()
@@ -151,35 +170,43 @@ export function DashboardTab() {
             </tr>
           </thead>
           <tbody>
-            {slots.filter(s => s.status === 'confirmed').length === 0 ? (
+            {confirmedClasses.length === 0 ? (
               <tr>
                 <td colSpan={4} className="px-6 py-8 text-sm text-center" style={{ color: 'var(--driftwood)' }}>
                   No confirmed classes yet
                 </td>
               </tr>
-            ) : slots.filter(s => s.status === 'confirmed').map(slot => (
-              <tr key={slot.id} className="border-b last:border-0 hover:bg-[#faf7f2] transition-colors"
-                  style={{ borderColor: 'var(--linen)' }}>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium"
-                         style={{ background: 'var(--ivory)', color: 'var(--clay)' }}>—</div>
-                    <span className="text-sm" style={{ color: 'var(--bark)' }}>Assigned</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-sm" style={{ color: 'var(--soil)' }}>
-                  {slot.duration_hours}h class
-                </td>
-                <td className="px-6 py-4 text-sm" style={{ color: 'var(--soil)' }}>
-                  {slot.date} · {slot.start_time.slice(0, 5)}
-                </td>
-                <td className="px-6 py-4">
-                  <span className={`text-[10px] font-mono px-2 py-1 rounded-sm uppercase tracking-wider ${STATUS_STYLES.confirmed.badge}`}>
-                    CONFIRMED
-                  </span>
-                </td>
-              </tr>
-            ))}
+            ) : confirmedClasses.map(cls => {
+              const slotData = cls.slots as { date: string; start_time: string; duration_hours: number } | null
+              const instructorData = cls.instructor as { name: string; email: string } | null
+              return (
+                <tr key={cls.id} className="border-b last:border-0 hover:bg-[#faf7f2] transition-colors"
+                    style={{ borderColor: 'var(--linen)' }}>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium"
+                           style={{ background: 'var(--ivory)', color: 'var(--clay)' }}>
+                        {instructorData?.name?.charAt(0) ?? '—'}
+                      </div>
+                      <span className="text-sm" style={{ color: 'var(--bark)' }}>
+                        {instructorData?.name ?? 'Unassigned'}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-sm" style={{ color: 'var(--soil)' }}>
+                    {slotData?.duration_hours ?? '?'}h class
+                  </td>
+                  <td className="px-6 py-4 text-sm" style={{ color: 'var(--soil)' }}>
+                    {slotData?.date ?? '??'} · {slotData?.start_time?.slice(0, 5) ?? '??:??'}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`text-[10px] font-mono px-2 py-1 rounded-sm uppercase tracking-wider ${STATUS_STYLES.confirmed.badge}`}>
+                      CONFIRMED
+                    </span>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

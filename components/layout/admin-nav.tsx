@@ -22,9 +22,10 @@ export function AdminNav({ activeTab, onTabChange, children }: AdminNavProps) {
       {/* Top Nav */}
       <nav className="border-b px-8 h-14 flex items-center justify-between sticky top-0 z-50"
            style={{ background: 'var(--white)', borderColor: 'var(--linen)' }}>
-        <span className="font-display text-xl font-light tracking-wide" style={{ color: 'var(--bark)' }}>
+        <Link href="/admin" className="font-display text-xl font-light tracking-wide hover:opacity-80 transition-opacity"
+              style={{ color: 'var(--bark)', textDecoration: 'none' }}>
           JUNOON
-        </span>
+        </Link>
         <div className="flex items-center gap-6">
           {TABS.map(({ id, label }) => (
             <button
