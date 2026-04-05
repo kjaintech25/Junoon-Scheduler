@@ -64,8 +64,24 @@ export default function InstructorBooking() {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Slot | null>(null)
   const [joiningWaitlist, setJoiningWaitlist] = useState(false)
+  const [leavingWaitlist, setLeavingWaitlist] = useState(false)
   const [weekOffset, setWeekOffset] = useState(0)
   const weekDates = getWeekDates(weekOffset)
+
+  const fetchSlots = async (insId: string) => {
+    const { data: openSlots } = await supabase
+      .from('slots')
+      .select('*')
+      .eq('status', 'open')
+      .order('date', { ascending: true })
+    const { data: mySlots } = await supabase
+      .from('slots')
+      .select('*')
+      .eq('instructor_id', insId)
+      .neq('status', 'open')
+      .order('date', { ascending: true })
+    setSlots([...(openSlots || []), ...(mySlots || [])])
+  }
 
   useEffect(() => {
     if (!token) return
@@ -78,19 +94,7 @@ export default function InstructorBooking() {
         .single()
       if (insErr || !ins) { setError('Invalid booking link.'); setLoading(false); return }
       setInstructor(ins)
-      // Fetch open slots + slots already claimed by this instructor
-      const { data: openSlots } = await supabase
-        .from('slots')
-        .select('*')
-        .eq('status', 'open')
-        .order('date', { ascending: true })
-      const { data: mySlots } = await supabase
-        .from('slots')
-        .select('*')
-        .eq('instructor_id', ins.id)
-        .neq('status', 'open')
-        .order('date', { ascending: true })
-      setSlots([...(openSlots || []), ...(mySlots || [])])
+      await fetchSlots(ins.id)
       setLoading(false)
     }
     load()
@@ -105,24 +109,23 @@ export default function InstructorBooking() {
       .eq('id', selected.id)
     if (!upErr) {
       setSelected(null)
+      await fetchSlots(instructor.id)
     }
     setJoiningWaitlist(false)
+  }
 
-    // Refetch slots to get the updated status
-    if (instructor) {
-      const { data: openSlots } = await supabase
-        .from('slots')
-        .select('*')
-        .eq('status', 'open')
-        .order('date', { ascending: true })
-      const { data: mySlots } = await supabase
-        .from('slots')
-        .select('*')
-        .eq('instructor_id', instructor.id)
-        .neq('status', 'open')
-        .order('date', { ascending: true })
-      setSlots([...(openSlots || []), ...(mySlots || [])])
+  const handleLeaveWaitlist = async () => {
+    if (!selected || !instructor) return
+    setLeavingWaitlist(true)
+    const { error: upErr } = await supabase
+      .from('slots')
+      .update({ status: 'open', instructor_id: null })
+      .eq('id', selected.id)
+    if (!upErr) {
+      setSelected(null)
+      await fetchSlots(instructor.id)
     }
+    setLeavingWaitlist(false)
   }
 
   const slotsByDate = (date: Date) =>
@@ -152,14 +155,12 @@ export default function InstructorBooking() {
       {/* Left Sidebar */}
       <aside className="w-56 border-r shrink-0 py-6 px-4 flex flex-col"
              style={{ background: 'var(--white)', borderColor: 'var(--linen)' }}>
-        {/* Top nav logo */}
         <div className="px-3 mb-8">
           <span className="font-display text-lg font-light tracking-wide" style={{ color: 'var(--bark)' }}>
             Junoon
           </span>
         </div>
 
-        {/* Profile */}
         <div className="flex items-center gap-3 px-3 mb-6">
           <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-medium"
                style={{ background: 'var(--bark)', color: 'var(--turmeric)' }}>
@@ -190,7 +191,6 @@ export default function InstructorBooking() {
           ))}
         </nav>
 
-        {/* Quick Actions */}
         <div className="mt-auto px-3 pt-4 border-t" style={{ borderColor: 'var(--linen)' }}>
           <p className="font-mono text-[9px] uppercase tracking-widest mb-2" style={{ color: 'var(--driftwood)' }}>
             QUICK ACTIONS
@@ -203,8 +203,7 @@ export default function InstructorBooking() {
       </aside>
 
       {/* Main Content */}
-      <main className={`flex-1 px-8 py-8 transition-all ${selected ? 'opacity-40 pointer-events-none' : ''}`}>
-        {/* Header */}
+      <main className={`flex-1 px-8 py-8 transition-all ${selected ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="mb-6">
           <h1 className="font-display text-4xl font-light mb-1" style={{ color: 'var(--bark)' }}>
             Available Classes
@@ -217,7 +216,6 @@ export default function InstructorBooking() {
           </div>
         </div>
 
-        {/* Week Navigation */}
         <div className="flex items-center gap-2 mb-4">
           <button onClick={() => setWeekOffset(w => w - 1)}
             className="w-7 h-7 flex items-center justify-center rounded border hover:opacity-70 transition-opacity"
@@ -227,7 +225,6 @@ export default function InstructorBooking() {
             style={{ borderColor: 'var(--linen)', color: 'var(--driftwood)' }}>›</button>
         </div>
 
-        {/* Week Grid */}
         <div className="grid grid-cols-7 gap-3">
           {weekDates.map((date, i) => {
             const daySlots = slotsByDate(date)
@@ -251,26 +248,32 @@ export default function InstructorBooking() {
                   ) : daySlots.map(slot => {
                     const isYours = slot.instructor_id === instructor?.id
                     const isOpen = slot.status === 'open'
+                    const isClaimed = slot.status === 'claimed'
                     const bg = isOpen ? 'rgba(122,155,122,0.12)' : 'rgba(229,175,112,0.12)'
                     const bc = isOpen ? 'var(--sage)' : 'var(--turmeric)'
                     const badgeColor = isOpen ? 'var(--moss)' : 'var(--turmeric)'
+                    const clickable = isOpen || (isClaimed && isYours)
                     return (
-                    <button key={slot.id} onClick={() => setSelected(slot)}
-                      className="w-full text-left rounded p-3 border transition-all hover:opacity-90"
-                      style={{ background: bg, borderColor: bc }}>
-                      <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: badgeColor }}>
-                        {isOpen ? isYours ? 'CLICK TO VIEW' : 'AVAILABLE' : isYours ? 'WAITLISTED' : 'CLAIMED BY OTHER'}
-                      </p>
-                      <p className="text-xs font-medium mb-1" style={{ color: 'var(--bark)' }}>
-                        {formatTime(slot.start_time)} —<br />{addHours(slot.start_time, slot.duration_hours)}
-                      </p>
-                      <p className="font-mono text-[9px]" style={{ color: 'var(--driftwood)' }}>
-                        {slot.duration_hours * 60}m
-                      </p>
-                    </button>
+                      <div key={slot.id}
+                        className="w-full text-left rounded p-3 border transition-all"
+                        style={{
+                          background: bg, borderColor: bc,
+                          cursor: clickable ? 'pointer' : 'default',
+                          opacity: clickable ? 1 : 0.6,
+                        }}
+                        onClick={() => clickable && setSelected(slot)}>
+                        <p className="font-mono text-[9px] uppercase tracking-widest mb-1" style={{ color: badgeColor }}>
+                          {isOpen ? 'AVAILABLE' : isYours ? 'WAITLISTED' : 'CLAIMED BY OTHER'}
+                        </p>
+                        <p className="text-xs font-medium mb-1" style={{ color: 'var(--bark)' }}>
+                          {formatTime(slot.start_time)} —<br />{addHours(slot.start_time, slot.duration_hours)}
+                        </p>
+                        <p className="font-mono text-[9px]" style={{ color: 'var(--driftwood)' }}>
+                          {slot.duration_hours * 60}m
+                        </p>
+                      </div>
                     )
                   })}
-                  ))}
                 </div>
               </div>
             )
@@ -287,7 +290,6 @@ export default function InstructorBooking() {
           <div className="absolute inset-0 bg-black/20" onClick={() => setSelected(null)} />
           <div className="relative w-80 shadow-2xl flex flex-col overflow-y-auto"
                style={{ background: 'var(--white)' }}>
-            {/* Image / Header */}
             <div className="relative h-48 flex items-end p-4"
                  style={{ background: isOpen
                    ? 'linear-gradient(160deg, var(--clay) 0%, var(--bark) 100%)'
@@ -298,7 +300,7 @@ export default function InstructorBooking() {
               <div>
                 <span className="font-mono text-[9px] uppercase tracking-widest px-2 py-1 rounded-sm mb-2 inline-block"
                       style={{ background: isOpen ? 'var(--sage)' : 'var(--turmeric)', color: 'var(--white)' }}>
-                  {isOpen ? 'AVAILABLE SLOT' : isYours ? 'WAITLISTED' : 'CLAIMED BY OTHER'}
+                  {isOpen ? 'AVAILABLE SLOT' : 'WAITLISTED'}
                 </span>
                 <p className="font-display text-2xl font-light" style={{ color: 'var(--white)' }}>
                   {selected.duration_hours * 60}min Class Slot
@@ -306,7 +308,6 @@ export default function InstructorBooking() {
               </div>
             </div>
 
-            {/* Details */}
             <div className="p-5 flex-1">
               <div className="grid grid-cols-3 gap-3 mb-5 pb-5 border-b" style={{ borderColor: 'var(--linen)' }}>
                 <div>
@@ -325,14 +326,12 @@ export default function InstructorBooking() {
 
               <div className="mb-5">
                 <p className="font-mono text-[10px] uppercase tracking-widest mb-2" style={{ color: 'var(--bark)' }}>
-                  {isOpen ? 'About this Slot' : 'Status'}
+                  {isOpen ? 'About this Slot' : 'Your Status'}
                 </p>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--soil)' }}>
                   {isOpen
-                    ? 'This is an open teaching slot you can join the waitlist for. Once joined, Junoon admin will review and confirm your assignment. You\'ll see the status update in My Schedule.'
-                    : isYours
-                      ? 'You\'ve joined the waitlist for this slot. Junoon admin will review and confirm your assignment. You\'ll see the status update in My Schedule.'
-                      : 'This slot has been claimed by another instructor and is no longer available.'}
+                    ? 'This is an open teaching slot you can join the waitlist for. Once joined, Junoon admin will review and confirm your assignment.'
+                    : 'You are on the waitlist for this slot. Junoon admin will review and confirm your assignment.'}
                 </p>
               </div>
 
@@ -347,22 +346,28 @@ export default function InstructorBooking() {
               )}
             </div>
 
-            {/* Action Area */}
             <div className="p-5 border-t" style={{ borderColor: 'var(--linen)' }}>
               {isOpen ? (
                 <button onClick={handleJoinWaitlist} disabled={joiningWaitlist}
                   className="w-full py-3.5 text-sm font-medium tracking-wider rounded-sm transition-opacity disabled:opacity-50 hover:opacity-90"
                   style={{ background: 'var(--clay)', color: 'var(--white)' }}>
-                  Join Waitlist
+                  {joiningWaitlist ? 'Joining...' : 'Join Waitlist'}
                 </button>
               ) : (
-                <p className="text-center text-sm font-medium" style={{ color: 'var(--soil)' }}>
-                  {isYours ? '✓ Waitlisted — pending admin confirmation' : 'Not available'}
-                </p>
+                <div>
+                  <p className="text-center text-sm font-medium mb-3" style={{ color: 'var(--moss)' }}>
+                    ✓ Waitlisted — pending confirmation
+                  </p>
+                  <button onClick={handleLeaveWaitlist} disabled={leavingWaitlist}
+                    className="w-full py-3 text-sm font-medium tracking-wider rounded-sm transition-opacity disabled:opacity-50 hover:opacity-90 border border-red-300 bg-transparent"
+                    style={{ color: 'var(--clay)' }}>
+                    {leavingWaitlist ? 'Leaving...' : 'Leave Waitlist'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
-          </div>
+        </div>
         )
       })()}
     </div>

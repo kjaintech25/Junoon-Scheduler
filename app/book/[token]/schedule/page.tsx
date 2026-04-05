@@ -10,7 +10,7 @@ type Slot = {
   date: string
   start_time: string
   duration_hours: number
-  status: 'open' | 'claimed' | 'confirmed'
+  status: 'open' | 'claimed' | 'confirmed' | 'rejected'
 }
 
 type Instructor = {
@@ -69,6 +69,7 @@ export default function MySchedule() {
 
   const confirmed = slots.filter(s => s.status === 'confirmed')
   const claimed   = slots.filter(s => s.status === 'claimed')
+  const rejected  = slots.filter(s => s.status === 'rejected')
 
   return (
     <div className="min-h-screen flex" style={{ background: 'var(--cream)' }}>
@@ -242,8 +243,67 @@ export default function MySchedule() {
             )}
 
             {activeTab === 'Waitlist' && (
-              <div className="rounded-lg border py-8 text-center" style={{ borderColor: 'var(--linen)', background: 'var(--white)' }}>
-                <p className="text-sm" style={{ color: 'var(--driftwood)' }}>No waitlist entries</p>
+              <div className="space-y-3">
+                {rejected.length === 0 ? (
+                  <div className="rounded-lg border py-8 text-center" style={{ borderColor: 'var(--linen)', background: 'var(--white)' }}>
+                    <p className="text-sm" style={{ color: 'var(--driftwood)' }}>No rejected entries</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--driftwood)' }}>You'll see slots here if admin doesn't confirm your waitlist request.</p>
+                  </div>
+                ) : rejected.map(slot => {
+                  const { month, day } = fmtDate(slot.date)
+                  return (
+                    <div key={slot.id}
+                      className="flex items-start gap-4 rounded-lg border p-4 opacity-60"
+                      style={{ background: 'var(--white)', borderColor: 'var(--linen)', borderLeft: '3px solid #8C3A18' }}>
+                      <div className="text-center min-w-[40px]">
+                        <p className="font-mono text-[9px] uppercase tracking-widest" style={{ color: 'var(--driftwood)' }}>{month}</p>
+                        <p className="font-display text-2xl font-light" style={{ color: 'var(--bark)' }}>{day}</p>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-sm"
+                                style={{ background: 'rgba(140,58,24,0.1)', color: '#8C3A18' }}>REJECTED</span>
+                          <span className="text-xs" style={{ color: 'var(--driftwood)' }}>
+                            {formatTime(slot.start_time)} – {addHours(slot.start_time, slot.duration_hours)}
+                          </span>
+                        </div>
+                        <p className="font-medium text-sm mb-0.5" style={{ color: 'var(--bark)' }}>
+                          {slot.duration_hours}h Teaching Slot
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--driftwood)' }}>Junoon Wellness Studio</p>
+                      </div>
+                    </div>
+                  )
+                })}
+                {/* Also show claimed/waitlisted slots */}
+                {claimed.map((slot, idx) => {
+                  const { month, day } = fmtDate(slot.date)
+                  return (
+                    <div key={`pending-${slot.id}`}
+                      className="flex items-start gap-4 rounded-lg border p-4"
+                      style={{ background: 'var(--white)', borderColor: 'var(--linen)', borderLeft: '3px solid var(--turmeric)' }}>
+                      <div className="text-center min-w-[40px]">
+                        <p className="font-mono text-[9px] uppercase tracking-widest" style={{ color: 'var(--driftwood)' }}>{month}</p>
+                        <p className="font-display text-2xl font-light" style={{ color: 'var(--bark)' }}>{day}</p>
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-[9px] uppercase tracking-widest px-2 py-0.5 rounded-sm"
+                                style={{ background: 'rgba(232,184,112,0.2)', color: '#8C5A0A' }}>
+                            WAITLISTED — Position #{idx + 1}
+                          </span>
+                          <span className="text-xs" style={{ color: 'var(--driftwood)' }}>
+                            {formatTime(slot.start_time)} – {addHours(slot.start_time, slot.duration_hours)}
+                          </span>
+                        </div>
+                        <p className="font-medium text-sm mb-0.5" style={{ color: 'var(--bark)' }}>
+                          {slot.duration_hours}h Teaching Slot
+                        </p>
+                        <p className="text-xs" style={{ color: 'var(--driftwood)' }}>Pending admin confirmation</p>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             )}
 
