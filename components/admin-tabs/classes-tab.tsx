@@ -665,14 +665,15 @@ export function ClassesTab() {
                   </div>
                 </div>
               )}
-          )}
+          </div>
+        )}
         </div>
       </div>
     </>
   )
 }
 
-function formatDurationLabel(hours: number) {
+function formatDuration(hours: number) {
   const minutes = hours * 60
   if (minutes < 60) return `${minutes}m`
   if (minutes === 60) return '1h'
