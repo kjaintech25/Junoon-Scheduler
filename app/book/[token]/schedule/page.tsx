@@ -74,14 +74,20 @@ export default function MySchedule() {
         .from('waitlist')
         .select('slot:slots(*), signed_up_at')
         .eq('instructor_id', ins.id)
-      setWaitlistEntries((wlData?.filter((w: any) => w.slot) || []) as WaitlistEntry[])
+      const wlEntries: WaitlistEntry[] = (wlData ?? [])
+        .filter((w: any) => w.slot)
+        .map((w: any) => ({ slot: w.slot, signed_up_at: w.signed_up_at }) as unknown as WaitlistEntry)
+      setWaitlistEntries(wlEntries)
 
       // Fetch confirmed slots (from classes table)
       const { data: clsData } = await supabase
         .from('classes')
         .select('slot:slots(*), confirmed_at')
         .eq('instructor_id', ins.id)
-      setConfirmedEntries((clsData?.filter((c: any) => c.slot) || []) as ClassEntry[])
+      const clEntries: ClassEntry[] = (clsData ?? [])
+        .filter((c: any) => c.slot)
+        .map((c: any) => ({ slot: c.slot, confirmed_at: c.confirmed_at }) as unknown as ClassEntry)
+      setConfirmedEntries(clEntries)
 
       setLoading(false)
     }
