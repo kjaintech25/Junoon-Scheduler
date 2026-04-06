@@ -11,9 +11,6 @@ type Slot = {
   start_time: string
   duration_hours: number
   status: 'open' | 'claimed' | 'confirmed' | 'rejected'
-}
-
-type EnrichedSlot = Slot & {
   myStatus: 'open' | 'waitlisted' | 'confirmed' | 'rejected'
 }
 
@@ -62,10 +59,10 @@ export default function InstructorBooking() {
   const token = params.token as string
 
   const [instructor, setInstructor] = useState<Instructor | null>(null)
-  const [slots, setSlots] = useState<EnrichedSlot[]>([])
+  const [slots, setSlots] = useState<Slot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<EnrichedSlot | null>(null)
+  const [selected, setSelected] = useState<Slot | null>(null)
   const [joiningWaitlist, setJoiningWaitlist] = useState(false)
   const [leavingWaitlist, setLeavingWaitlist] = useState(false)
   const [weekOffset, setWeekOffset] = useState(0)
@@ -93,7 +90,7 @@ export default function InstructorBooking() {
     const confirmedSlotIds = new Set((clsData || []).map(c => c.slot_id))
 
     // Enrich every slot with my personal status
-    const enriched: EnrichedSlot[] = (allSlotsData || []).map(s => ({
+    const enriched: Slot[] = (allSlotsData || []).map(s => ({
       ...s,
       myStatus: confirmedSlotIds.has(s.id) ? 'confirmed' : (wlSlotIds.has(s.id) ? 'waitlisted' : 'open'),
     }))
