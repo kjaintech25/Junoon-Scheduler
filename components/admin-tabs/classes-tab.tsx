@@ -18,6 +18,8 @@ type Slot = {
   instructor_id: string | null
   stream_id: string | null
   class_type?: string
+  image_url?: string | null
+  is_published?: boolean
   instructor?: Instructor | null
 }
 
@@ -62,6 +64,8 @@ const DEFAULT_FORM = {
   status: 'open',
   stream_id: '',
   class_type: 'Vinyasa',
+  image_url: '',
+  is_published: 'true',
 }
 
 export function ClassesTab() {
@@ -190,6 +194,16 @@ export function ClassesTab() {
     setSaveMsg(`${entry.instructor?.name || 'Instructor'} confirmed!`)
     setTimeout(() => setSaveMsg(''), 3000)
 
+    // Sync to website (server-side, fire-and-forget)
+    try {
+      await fetch('/api/confirm-and-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slotId: slot.id }),
+      })
+    } catch (err) {
+      console.error('Website sync failed:', err)
+    }
     setSaving(false)
   }
 
@@ -243,6 +257,8 @@ export function ClassesTab() {
       status: slot.status,
       stream_id: slot.stream_id || '',
       class_type: (slot.class_type || 'Vinyasa'),
+      image_url: slot.image_url || '',
+      is_published: slot.is_published ? 'true' : 'false',
     })
     setSaveMsg('')
   }
@@ -279,6 +295,8 @@ export function ClassesTab() {
         stream_id: form.stream_id.trim() || null,
         class_type: form.class_type,
         instructor_id: editingInstructor || null,
+        image_url: form.image_url.trim() || null,
+        is_published: form.is_published === 'true',
       })
       .eq('id', editingId)
     if (!error) {
@@ -291,6 +309,8 @@ export function ClassesTab() {
         instructor_id: editingInstructor || null,
         stream_id: form.stream_id.trim() || null,
         class_type: form.class_type,
+        image_url: form.image_url.trim() || null,
+        is_published: form.is_published === 'true',
       }
       setSelected(updated)
       setSlots(prev => prev.map(s => s.id === editingId ? updated : s))
@@ -312,6 +332,8 @@ export function ClassesTab() {
       status: form.status,
       stream_id: form.stream_id.trim() || null,
       class_type: form.class_type,
+      image_url: form.image_url.trim() || null,
+      is_published: form.is_published === 'true',
     }])
     if (!error) {
       setSaveMsg('Class created!')
@@ -536,6 +558,27 @@ export function ClassesTab() {
                     style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }} />
                 </div>
 
+                <div>
+                  <label className="font-mono text-[9px] uppercase tracking-widest block mb-1.5"
+                         style={{ color: 'var(--driftwood)' }}>IMAGE URL <span style={{ opacity: 0.6 }}>(optional, placeholder shown if empty)</span></label>
+                  <input type="text" value={form.image_url} placeholder="https://..."
+                    onChange={e => setForm(f => ({ ...f, image_url: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-sm border text-sm outline-none focus:border-[var(--clay)] transition-colors font-mono"
+                    style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }} />
+                </div>
+
+                <div>
+                  <label className="font-mono text-[9px] uppercase tracking-widest block mb-1.5"
+                         style={{ color: 'var(--driftwood)' }}>PUBLISHED</label>
+                  <select value={form.is_published}
+                    onChange={e => setForm(f => ({ ...f, is_published: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-sm border text-sm outline-none focus:border-[var(--clay)] transition-colors"
+                    style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }}>
+                    <option value="true">Yes — show on website</option>
+                    <option value="false">No — hide from website</option>
+                  </select>
+                </div>
+
                 <div className="flex gap-2">
                   <button onClick={cancelCreate} disabled={saving}
                     className="flex-1 py-3 text-sm font-medium tracking-wider rounded-sm transition-opacity border border-[var(--linen)] bg-transparent cursor-pointer"
@@ -661,6 +704,27 @@ export function ClassesTab() {
                     onChange={e => setForm(f => ({ ...f, stream_id: e.target.value }))}
                     className="w-full px-3 py-2 rounded-sm border text-sm outline-none focus:border-[var(--clay)] transition-colors font-mono"
                     style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }} />
+                </div>
+
+                <div>
+                  <label className="font-mono text-[9px] uppercase tracking-widest block mb-1.5"
+                         style={{ color: 'var(--driftwood)' }}>IMAGE URL <span style={{ opacity: 0.6 }}>(optional, placeholder shown if empty)</span></label>
+                  <input type="text" value={form.image_url} placeholder="https://..."
+                    onChange={e => setForm(f => ({ ...f, image_url: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-sm border text-sm outline-none focus:border-[var(--clay)] transition-colors font-mono"
+                    style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }} />
+                </div>
+
+                <div>
+                  <label className="font-mono text-[9px] uppercase tracking-widest block mb-1.5"
+                         style={{ color: 'var(--driftwood)' }}>PUBLISHED</label>
+                  <select value={form.is_published}
+                    onChange={e => setForm(f => ({ ...f, is_published: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-sm border text-sm outline-none focus:border-[var(--clay)] transition-colors"
+                    style={{ borderColor: 'var(--linen)', background: 'var(--cream)', color: 'var(--bark)' }}>
+                    <option value="true">Yes — show on website</option>
+                    <option value="false">No — hide from website</option>
+                  </select>
                 </div>
 
                 <div className="flex gap-2">
