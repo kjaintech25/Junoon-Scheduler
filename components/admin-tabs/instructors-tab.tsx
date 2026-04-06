@@ -107,7 +107,6 @@ export function InstructorsTab() {
                 </thead>
                 <tbody>
                   {instructors.map(instructor => {
-                    const bookingLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/book/${instructor.unique_token}`
                     return (
                       <tr key={instructor.id} className="border-b last:border-0 hover:bg-[#faf7f2] transition-colors"
                           style={{ borderColor: 'var(--linen)' }}>
