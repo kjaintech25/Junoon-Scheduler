@@ -312,7 +312,7 @@ export default function InstructorBooking() {
       {/* Right Detail Panel */}
       {selected && (() => {
         const isOpen = selected.myStatus === 'open'
-        const isWaitlisted = selected.myStatus === 'waitlisted'
+        const _isWaitlisted = selected.myStatus === 'waitlisted'
         return (
         <div className="fixed inset-0 z-40 flex justify-end">
           <div className="absolute inset-0 bg-black/20" onClick={() => setSelected(null)} />
