@@ -70,7 +70,6 @@ const DEFAULT_FORM = {
 
 export function ClassesTab() {
   const [slots, setSlots] = useState<Slot[]>([])
-  const [instructors, setInstructors] = useState<Instructor[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Slot | null>(null)
   const [streamInput, setStreamInput] = useState('')
