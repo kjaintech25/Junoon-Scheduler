@@ -65,7 +65,7 @@ export default function InstructorBooking() {
   const [slots, setSlots] = useState<EnrichedSlot[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<Slot | null>(null)
+  const [selected, setSelected] = useState<EnrichedSlot | null>(null)
   const [joiningWaitlist, setJoiningWaitlist] = useState(false)
   const [leavingWaitlist, setLeavingWaitlist] = useState(false)
   const [weekOffset, setWeekOffset] = useState(0)
