@@ -11,12 +11,19 @@ GitHub: kjaintech25/Junoon-Scheduler
 1. **Stream tab restored + liveId fix** — VdoCipher player showed "Error: 400 Live Id missing" because iframe URL only had `?token=`. Fixed API to return `liveId`, updated iframe to `?liveId=X&token=Y`. Pushed + deployed.
 2. **Waitlisted slots visual fix** — Slots disappeared from instructor calendar after joining waitlist. Fixed to keep visible with amber WAITLISTED styling (green for open, amber for claimed). Detail panel shows conditional action (Join Waitlist vs status message). Pushed + deployed.
 
-### Next Steps (Ordered)
-1. `/admin/instructors` UI — already built, just needs to be deployed + tested end-to-end
-2. **Show instructor name on claimed slots** in Classes tab (currently shows hardcoded "1 instructor waiting")
-3. **Admin confirmation workflow** — "Confirm" button on claimed slots that creates a `classes` record and flips status to "confirmed"
-4. Email notifications via Resend (Phase 2)
-5. Instructor ability to cancel/swap a claimed slot
+### Completed (2026-04-06)
+- `confirm-and-sync` API route deployed — fires POST to website on class confirm
+- VdoCipher token endpoint has CORS for website domain
+- `image_url` + `is_published` fields added to slot creation
+- Milestone 1 deployed and live
+- Handoff doc created for Bhargava (`~/Desktop/HANDOFF-MILESTONE-2.md`)
+- Instructor Quick Start Guide created in Notion (under Scheduler PRD)
+- Beehiiv sync Edge Function deployed for pre-launch signups → Beehiiv (Website Supabase project)
+
+### Next Steps
+1. Bhargava completes Milestone 2 (website streaming integration)
+2. Milestone 3: Auto-create VdoCipher stream IDs, handle slot status change syncs
+3. Phase 2: Email notifications via Resend
 
 ### Known Issues / Blockers
 - `classes` table exists in Supabase but is unused (0 rows)
